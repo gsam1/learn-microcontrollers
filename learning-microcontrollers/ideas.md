@@ -1,0 +1,1 @@
+# 1. Make a thing that when it detects sounds it will output on the display that someone is present.
