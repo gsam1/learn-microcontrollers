@@ -15,6 +15,7 @@ def send_hex_string(hex_string):
     soft_uart.write(hex_bytes)
 
 def read_serial_data():
+    print("Reading serial data...")
     buffer = []
     counter = 0
     while True:
