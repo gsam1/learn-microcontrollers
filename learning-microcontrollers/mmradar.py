@@ -28,7 +28,7 @@ def read_serial_data():
             if len(buffer) >= 10:
                 buffer_sum = sum(buffer)
                 if buffer_sum >= 3:
-                    print("Presence Detected.", buffer_sum, counter)
+                    pass
                 else:
                     print("No Presence Detected.", buffer_sum, counter)
                 

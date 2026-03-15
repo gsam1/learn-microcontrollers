@@ -9,7 +9,7 @@ import binascii
 
 # Wi-Fi and MQTT configuration
 WIFI_SSID = "SAMWIFI"
-WIFI_PASSWORD = "*****"
+WIFI_PASSWORD = "georgins25"
 MQTT_BROKER = "192.168.1.75"
 MQTT_PORT = 1883
 MQTT_TOPIC = "pico/sensor_data"
@@ -43,7 +43,7 @@ class MMRadar:
                 if len(buffer) >= 10:
                     buffer_sum = sum(buffer)
                     if buffer_sum >= 3:
-                        payload = "Presence Detected." + str(buffer_sum) + str(counter)
+                        payload = "Presence Detected." + str(buffer_sum) + "." + str(counter)
                         try:
                             print(payload)
                             mqtt_client.publish(MQTT_TOPIC, payload)
@@ -52,7 +52,7 @@ class MMRadar:
                             mqtt_client.reconnect()
                     else:
                         try:
-                            payload = "No Presence Detected." + str(buffer_sum) + str(counter)
+                            payload = "No Presence Detected." + str(buffer_sum) + "." + str(counter)
                             print(payload)
                             mqtt_client.publish(MQTT_TOPIC, payload)
                         except Exception as e:
@@ -95,19 +95,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-def send_hex_string(hex_string):
-    hex_bytes = binascii.unhexlify(hex_string)
-    soft_uart.write(hex_bytes)
-
-
-               
-
-if __name__ == "__main__":
-    hex_to_send = "FDFCFBFA0800120000006400000004030201"
-    send_hex_string(hex_to_send)
-    response = read_serial_data()

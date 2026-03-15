@@ -23,7 +23,9 @@ class OLED_1inch5(framebuf.FrameBuffer):
         self.init_display()
         
         self.white =   0xf
-        self.balck =   0x0000
+        self.black =   0x0000
+        self.yellow =  0xff0
+        self.red =     0xf00
         
     def write_cmd(self, cmd):
         self.temp[0] = 0x00 
@@ -121,7 +123,7 @@ if __name__=='__main__':
         OLED.fill(0)
         OLED.text("128 x 128 Pixels",1,5,OLED.white)
         OLED.text("Georgi E DA DUDE!!",1,20,OLED.white)
-        OLED.text("SSD1327",1,35,OLED.white)  
+        OLED.text("SSD1327",1,35,OLED.red)  
         OLED.line(0,0,127,0,OLED.white)
         OLED.fill_rect(0, 50,127,60,  2+i)
         OLED.fill_rect(0, 60,127,70,  4+i)
