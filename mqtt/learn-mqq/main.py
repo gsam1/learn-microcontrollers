@@ -4,15 +4,7 @@ from machine import Pin, UART
 from umqtt_simple import MQTTClient
 import utime
 import binascii
-
-# Import your sensor library here, e.g., from dht import DHT11
-
-# Wi-Fi and MQTT configuration
-WIFI_SSID = "SAMWIFI"
-WIFI_PASSWORD = "georgins25"
-MQTT_BROKER = "192.168.1.75"
-MQTT_PORT = 1883
-MQTT_TOPIC = "pico/sensor_data"
+from config import WIFI_SSID, WIFI_PASSWORD, MQTT_BROKER, MQTT_PORT, MQTT_TOPIC, MQTT_USER, MQTT_PASSWORD
 
 
 class MMRadar:
@@ -78,7 +70,9 @@ def connect_to_mqtt():
     client = MQTTClient(
         client_id=b"pico_client",
         server=MQTT_BROKER,
-        port=MQTT_PORT
+        port=MQTT_PORT,
+        user=MQTT_USER,
+        password=MQTT_PASSWORD
     )
     client.connect()
     print("Connected to MQTT Broker!")
