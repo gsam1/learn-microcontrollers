@@ -1,8 +1,8 @@
-WIFI_SSID = "your_wifi_ssid"
-WIFI_PASSWORD = "your_wifi_password"
+WIFI_SSID = "sam-wifi"
+WIFI_PASSWORD = "georgins25"
 
-MQTT_BROKER = "192.168.1.75"
+MQTT_BROKER = "192.168.10.8"
 MQTT_PORT = 1883
 MQTT_TOPIC = "pico/sensor_data"
-MQTT_USER = "your_mqtt_username"
-MQTT_PASSWORD = "your_mqtt_password"
+MQTT_USER = "mqtt_user"
+MQTT_PASSWORD = ".staticx12"

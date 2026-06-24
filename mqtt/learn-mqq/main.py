@@ -15,12 +15,15 @@ class MMRadar:
         self.tx_pin = Pin(tx_pin_number)
         self.rx_pin = Pin(rx_pin_number)
 
-    def send_hex_string(self):
+    def send_hex_string(self, uart):
         hex_string = "FDFCFBFA0800120000006400000004030201"
         hex_bytes = binascii.unhexlify(hex_string)
+        print("Sending hex string:", hex_string)
+        uart.write(hex_bytes)
     
     def read_serial_data(self, mqtt_client):
         soft_uart = UART(1, baudrate=115200, tx=self.tx_pin, rx=self.rx_pin)
+        self.send_hex_string(soft_uart)
         print("Reading serial data...")
         buffer = []
         counter = 0
@@ -84,7 +87,6 @@ def main():
     mqtt_client = connect_to_mqtt()
 
     mmradar = MMRadar()
-    mmradar.send_hex_string()
     mmradar.read_serial_data(mqtt_client)
 
 if __name__ == "__main__":
