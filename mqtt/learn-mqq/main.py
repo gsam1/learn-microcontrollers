@@ -38,7 +38,8 @@ class MMRadar:
                 if len(buffer) >= 10:
                     buffer_sum = sum(buffer)
                     if buffer_sum >= 3:
-                        payload = "Presence Detected." + str(buffer_sum) + "." + str(counter)
+                        payload = '{"presence": 1, "count": ' + str(buffer_sum) + ', "counter": ' + str(counter) + "}"
+
                         try:
                             print(payload)
                             mqtt_client.publish(MQTT_TOPIC, payload)
@@ -47,7 +48,7 @@ class MMRadar:
                             mqtt_client.reconnect()
                     else:
                         try:
-                            payload = "No Presence Detected." + str(buffer_sum) + "." + str(counter)
+                            payload = '{"presence": 0, "count": ' + str(buffer_sum) + ', "counter": ' + str(counter) + '}'
                             print(payload)
                             mqtt_client.publish(MQTT_TOPIC, payload)
                         except Exception as e:
@@ -83,6 +84,8 @@ def connect_to_mqtt():
 
 # Main loop
 def main():
+    pin = Pin("LED", Pin.OUT)
+    pin.on()  # Turn on the LED to indicate the program is running
     connect_to_wifi()
     mqtt_client = connect_to_mqtt()
 
