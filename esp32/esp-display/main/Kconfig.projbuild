@@ -1,0 +1,19 @@
+menu "Photo Frame"
+
+    config FRAME_WIFI_SSID
+        string "Wi-Fi SSID"
+        default ""
+
+    config FRAME_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+
+    config FRAME_PHOTOS_URL
+        string "Photo directory URL (nginx JSON autoindex, trailing slash)"
+        default "http://192.168.1.18:8080/photos/"
+
+    config FRAME_INTERVAL_SEC
+        int "Seconds between photos"
+        default 600
+
+endmenu
