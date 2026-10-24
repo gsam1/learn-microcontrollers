@@ -1,4 +1,4 @@
-// Smart photo frame: lists the JPEGs on a web server, shows one every CONFIG_FRAME_INTERVAL_SEC,
+// Smart photo frame: lists the photos on a web server, shows one every CONFIG_FRAME_INTERVAL_SEC,
 // and skips to the next one when the screen is touched.
 
 #include <ctype.h>
@@ -23,7 +23,7 @@
 static const char *TAG = "frame";
 
 #define MAX_PHOTOS    512
-#define MAX_DOWNLOAD  (4 * 1024 * 1024)
+#define MAX_DOWNLOAD  (6 * 1024 * 1024)
 #define RETRY_DELAY_MS 5000
 
 static EventGroupHandle_t s_wifi_events;
@@ -125,10 +125,11 @@ done:
     return err;
 }
 
-static bool is_jpeg_name(const char *name)
+// imgproxy converts HEIC to JPEG, so phone HEIC photos can be shown too.
+static bool is_photo_name(const char *name)
 {
     const char *dot = strrchr(name, '.');
-    return dot && (strcasecmp(dot, ".jpg") == 0 || strcasecmp(dot, ".jpeg") == 0);
+    return dot && (strcasecmp(dot, ".jpg") == 0 || strcasecmp(dot, ".jpeg") == 0 || strcasecmp(dot, ".heic") == 0);
 }
 
 // Parse nginx's JSON autoindex: [{ "name":"a.jpg", "type":"file", ... }, ...]
@@ -148,7 +149,7 @@ static int fetch_photo_list(char *names[], int max)
             break;
         }
         char *name = strndup(p, end - p);
-        if (is_jpeg_name(name)) {
+        if (is_photo_name(name)) {
             names[count++] = name;
         } else {
             free(name);
@@ -160,9 +161,10 @@ static int fetch_photo_list(char *names[], int max)
     return count;
 }
 
+// imgproxy URL that serves the photo shrunk to the screen, turned upright and as a baseline JPEG.
 static void url_for(const char *name, char *url, size_t size)
 {
-    size_t n = strlcpy(url, CONFIG_FRAME_PHOTOS_URL, size);
+    size_t n = strlcpy(url, CONFIG_FRAME_IMAGES_URL, size);
     for (const char *c = name; *c && n + 4 < size; c++) {
         if (isalnum((unsigned char)*c) || strchr("-_.~", *c)) {
             url[n++] = *c;
@@ -171,6 +173,7 @@ static void url_for(const char *name, char *url, size_t size)
         }
     }
     url[n] = '\0';
+    strlcat(url, "@jpg", size);
 }
 
 // Decoder scale target must be a multiple of 8 and at most 8x smaller than the source.
@@ -183,11 +186,57 @@ static int scaled_dim(int src, float factor)
     return d < 8 ? 8 : d;
 }
 
-// Decode a JPEG, fit it to the screen (letterboxed on black) and show it.
+static uint32_t tiff_read(const uint8_t *p, int bytes, bool little_endian)
+{
+    uint32_t v = 0;
+    for (int k = 0; k < bytes; k++) {
+        v |= (uint32_t)p[k] << 8 * (little_endian ? k : bytes - 1 - k);
+    }
+    return v;
+}
+
+// Phones store portraits as landscape pixels plus an EXIF Orientation tag saying how to turn them upright.
+// Returns that turn (clockwise), or 0 degrees when there is no tag.
+static jpeg_rotate_t exif_rotation(const uint8_t *d, int len)
+{
+    // Walk the JPEG segments (FF xx, 2-byte length) up to the start of the image data (FF DA).
+    for (int i = 2; i + 4 <= len && d[i] == 0xFF && d[i + 1] != 0xDA; i += 2 + (d[i + 2] << 8 | d[i + 3])) {
+        int seg_len = d[i + 2] << 8 | d[i + 3];
+        if (d[i + 1] != 0xE1 || seg_len < 16 || i + 2 + seg_len > len || memcmp(d + i + 4, "Exif\0\0", 6) != 0) {
+            continue;
+        }
+        // TIFF header: byte order ("II" = little endian), magic, offset of the first tag directory (IFD0).
+        const uint8_t *t = d + i + 10;
+        int t_len = seg_len - 8;
+        bool le = t[0] == 'I';
+        uint32_t ifd = tiff_read(t + 4, 4, le);
+        if (ifd + 2 > (uint32_t)t_len) {
+            break;
+        }
+        int entries = tiff_read(t + ifd, 2, le);
+        // 12-byte entries: tag, type, count, value. Orientation is tag 0x0112.
+        for (int e = 0; e < entries && ifd + 2 + 12 * (e + 1) <= (uint32_t)t_len; e++) {
+            const uint8_t *entry = t + ifd + 2 + 12 * e;
+            if (tiff_read(entry, 2, le) == 0x0112) {
+                switch (tiff_read(entry + 8, 2, le)) {
+                case 3: return JPEG_ROTATE_180D;
+                case 6: return JPEG_ROTATE_90D;
+                case 8: return JPEG_ROTATE_270D;
+                default: return JPEG_ROTATE_0D;  // upright, or a mirrored variant (rare, ignored)
+                }
+            }
+        }
+        break;
+    }
+    return JPEG_ROTATE_0D;
+}
+
+// Decode a JPEG, turn it upright, fit it to the screen (letterboxed on black) and show it.
 static esp_err_t show_jpeg(uint8_t *data, int len)
 {
     jpeg_dec_config_t cfg = DEFAULT_JPEG_DEC_CONFIG();
     cfg.output_type = JPEG_PIXEL_FORMAT_RGB565_LE;
+    jpeg_rotate_t rotate = exif_rotation(data, len);
 
     jpeg_dec_handle_t dec;
     if (jpeg_dec_open(&cfg, &dec) != JPEG_ERR_OK) {
@@ -202,16 +251,25 @@ static esp_err_t show_jpeg(uint8_t *data, int len)
         ESP_LOGE(TAG, "bad JPEG header (progressive JPEGs are not supported)");
         goto done;
     }
+    // A 90/270 degree turn swaps width and height, so fit the upright size to the screen.
+    bool swap = rotate == JPEG_ROTATE_90D || rotate == JPEG_ROTATE_270D;
+    int upright_w = swap ? info.height : info.width, upright_h = swap ? info.width : info.height;
+    float fx = (float)LCD_H_RES / upright_w, fy = (float)LCD_V_RES / upright_h;
+    float f = fx < fy ? fx : fy;
     int w = info.width, h = info.height;
-    if (w > LCD_H_RES || h > LCD_V_RES) {
-        float fx = (float)LCD_H_RES / w, fy = (float)LCD_V_RES / h;
-        float f = fx < fy ? fx : fy;
+    // Rotation needs sizes that are multiples of 8, so rotated photos always go through the scaler (at 1x if small).
+    if (f < 1 || rotate != JPEG_ROTATE_0D) {
+        if (f > 1) {
+            f = 1;
+        }
+        // The decoder scales before it rotates, so the scale target is in the stored (unrotated) orientation.
         w = scaled_dim(info.width, f);
         h = scaled_dim(info.height, f);
-        // Re-open with the scale setting; the header has to be parsed again after that.
+        // Re-open with the scale and rotate settings; the header has to be parsed again after that.
         jpeg_dec_close(dec);
         cfg.scale.width = w;
         cfg.scale.height = h;
+        cfg.rotate = rotate;
         if (jpeg_dec_open(&cfg, &dec) != JPEG_ERR_OK) {
             return ESP_FAIL;
         }
@@ -219,6 +277,11 @@ static esp_err_t show_jpeg(uint8_t *data, int len)
         if (jpeg_dec_parse_header(dec, &io, &info) != JPEG_ERR_OK) {
             goto done;
         }
+    }
+    if (swap) {
+        int t = w;
+        w = h;
+        h = t;
     }
 
     int out_len;

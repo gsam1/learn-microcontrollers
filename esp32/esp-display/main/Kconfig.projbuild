@@ -12,6 +12,10 @@ menu "Photo Frame"
         string "Photo directory URL (nginx JSON autoindex, trailing slash)"
         default "http://192.168.1.18:8080/photos/"
 
+    config FRAME_IMAGES_URL
+        string "Image URL prefix (imgproxy; the file name and @jpg are appended)"
+        default "http://192.168.1.18:8081/insecure/rs:fit:800:480/plain/"
+
     config FRAME_INTERVAL_SEC
         int "Seconds between photos"
         default 600

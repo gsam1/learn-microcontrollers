@@ -1,8 +1,9 @@
 # Photo Frame — Waveshare ESP32-S3-Touch-LCD-7
 
 Turns the [Waveshare ESP32-S3-Touch-LCD-7](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-7) into a smart photo frame:
-it fetches the JPEG list from `http://192.168.1.18:8080/photos/`, shows one photo every 10 minutes,
-and skips to the next one when the screen is touched.
+it fetches the photo list from `http://192.168.1.18:8080/photos/`, shows one photo every 10 minutes,
+and skips to the next one when the screen is touched. Photos are downloaded through imgproxy (port 8081), which
+shrinks them to the screen, turns them upright and converts HEIC, so any phone photo can be dropped in `photos/` as is.
 
 Built with ESP-IDF v6.1 in plain C (no Arduino, no LVGL).
 
@@ -25,6 +26,8 @@ Gotchas hit while setting this up:
   (the S3's built-in USB), `UART` as `1a86:55d3` (CH343 chip). Both appear as `/dev/ttyACM0`.
 - **"Permission denied" on the port:** `sudo usermod -aG dialout $USER`, then log out and back in.
 - **"Failed to connect" while flashing:** hold BOOT, tap RESET, release BOOT (download mode). Tap RESET afterwards to run.
+- **Stuck in download mode after a reset over USB?** (`boot:0x0 (DOWNLOAD(USB/UART0))` in the log.) Resetting through the
+  `USB` port's serial lines can do this. Flashing still works; unplug the board and power it up again to run the frame.
 
 ## The hardware
 
@@ -84,15 +87,23 @@ A photo that fails to download or decode is skipped after 5 seconds instead of l
 
 **Getting the list.** The server (nginx with JSON autoindex) answers `/photos/` with JSON like
 `[{"name":"a.jpg","type":"file",...}]`. Rather than pulling in a JSON library, `fetch_photo_list` just searches for
-`"name":"` and keeps names ending in `.jpg`/`.jpeg`. That's fine for nginx's predictable output, but it would break on
+`"name":"` and keeps names ending in `.jpg`/`.jpeg`/`.heic`. That's fine for nginx's predictable output, but it would break on
 arbitrary JSON. Re-reading the list each round means photos added or removed on the server get picked up.
 
-**Downloading (`http_get`).** This reads the HTTP response into a PSRAM buffer. The server usually says how big the
+**Downloading (`http_get`).** Photos come from imgproxy, not nginx: `url_for` builds
+`CONFIG_FRAME_IMAGES_URL` + file name + `@jpg`, e.g.
+`http://192.168.1.18:8081/insecure/rs:fit:800:480/plain/20240717_203536.jpg@jpg`. imgproxy's base URL already points at
+the photos folder, so only the file name goes after `plain/`. It returns a baseline JPEG of at most 800×480, upright,
+usually 20–100 KB instead of several MB.
+
+ This reads the HTTP response into a PSRAM buffer. The server usually says how big the
 file is (`Content-Length`), so the buffer is sized right first time. If it doesn't, the buffer doubles as data arrives,
-up to a 4 MB cap.
+up to a 6 MB cap (about what is left of the 8 MB PSRAM after the frame buffers).
 
 **Decoding (`show_jpeg`).** `esp_new_jpeg` is Espressif's decoder, tuned for the S3's SIMD instructions.
 - It reads the header first to get the photo's size.
+- Phones save portraits as landscape pixels with an EXIF *Orientation* tag (6 = turn 90° clockwise, 8 = 270°).
+  `exif_rotation` reads that tag and the decoder rotates while decoding, so portraits show upright (pillarboxed).
 - If the photo is bigger than the screen, it works out a scale that fits while keeping proportions. The decoder
   shrinks the photo *while* decoding, which is much cheaper than decoding full size and shrinking afterwards.
 - Output is **RGB565**: 16 bits per pixel, the same format the screen uses, so no conversion is needed.
@@ -127,4 +138,5 @@ The display timing (16 MHz pixel clock, porches of 8, sync pulses of 4) comes fr
 not the wiki. If the picture ever flickers or looks shifted, those numbers in `board.c` are the first thing to change.
 
 The settings under **Photo Frame** in `menuconfig` come from `Kconfig.projbuild`. They turn into `CONFIG_FRAME_*`
-constants that the code uses (`CONFIG_FRAME_INTERVAL_SEC` for the 10 minutes, `CONFIG_FRAME_PHOTOS_URL` for the server).
+constants that the code uses (`CONFIG_FRAME_INTERVAL_SEC` for the 10 minutes, `CONFIG_FRAME_PHOTOS_URL` for the list,
+`CONFIG_FRAME_IMAGES_URL` for imgproxy).
